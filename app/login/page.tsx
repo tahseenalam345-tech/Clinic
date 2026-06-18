@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Mail, Lock, User as UserIcon, Shield, ArrowLeft, Stethoscope, HeartPulse, LogIn } from 'lucide-react';
+import { Mail, Lock, User as UserIcon, Shield, ArrowLeft, Stethoscope, HeartPulse } from 'lucide-react';
 import Link from 'next/link';
 
-export default function LoginPage() {
+// 1. Rename your original component to LoginContent
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnTo = searchParams.get('returnTo');
@@ -67,18 +68,15 @@ export default function LoginPage() {
     }
   };
 
-  // ... (Keep existing imports)
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { 
-        // We tell Supabase to send them to a dedicated auth-callback route
         redirectTo: `${window.location.origin}/auth/callback` 
       }
     });
   };
-// ...
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
@@ -204,5 +202,18 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 2. Create the new default export that wraps the content in Suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }
