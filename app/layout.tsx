@@ -39,9 +39,9 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'light',
+  colorScheme: 'dark', // Updated to enforce dark mode at the browser level
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#0066cc' },
+    { color: '#09090b' }, // Deep zinc/black color for mobile browser top bars
   ],
   width: 'device-width',
   initialScale: 1,
@@ -54,8 +54,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`bg-background ${geistSans.variable} ${geistMono.variable}`}>
-      <body className="font-sans antialiased bg-background selection:bg-blue-500/30">
+    // Added the 'dark' class here to permanently lock the theme
+    <html lang="en" className={`dark bg-background ${geistSans.variable} ${geistMono.variable}`}>
+      <body className="font-sans antialiased bg-background selection:bg-blue-500/30 text-foreground">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
-import { Calendar as CalendarIcon, Clock, CreditCard, Wallet, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CreditCard, Wallet, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, ShieldCheck, X, Lock } from 'lucide-react';
 import Link from 'next/link';
 
 import { MOCK_DOCTORS_FULL } from '@/app/doctors/page';
@@ -29,18 +29,19 @@ export default function BookingPage() {
   const doctor = MOCK_DOCTORS_FULL.find(d => d.id === doctorId) || MOCK_DOCTORS_FULL[0];
   const availableTimes = DOCTOR_SLOTS[doctor.id] || DOCTOR_SLOTS['1'];
 
-  // Form State
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash'>('online');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Payment & Success States
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
   // Custom Calendar State
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Calendar Engine Helpers
   const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
   
@@ -49,17 +50,30 @@ export default function BookingPage() {
 
   const handleSelectDate = (day: number) => {
     const newDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-    // Format to a readable string (e.g., "Mon, Jun 24, 2026")
     setSelectedDate(newDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
     setShowCalendar(false);
-    setSelectedTime(''); // Reset time when date changes
+    setSelectedTime(''); 
   };
 
-  const handleBooking = async () => {
+  const handleInitialBookingClick = () => {
     if (!selectedDate || !selectedTime) return;
-    setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsSubmitting(false);
+    
+    if (paymentMethod === 'online') {
+      // Show checkout modal if paying online
+      setShowPaymentModal(true);
+    } else {
+      // Process immediately if paying cash at clinic
+      processFinalBooking();
+    }
+  };
+
+  const processFinalBooking = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsProcessingPayment(true);
+    // Simulate API call to payment gateway / Supabase
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    setIsProcessingPayment(false);
+    setShowPaymentModal(false);
     setIsSuccess(true);
     setTimeout(() => router.push('/dashboard/patient'), 2000);
   };
@@ -84,8 +98,69 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background relative">
       <Header />
+
+      {/* PAYMENT GATEWAY MODAL */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !isProcessingPayment && setShowPaymentModal(false)} />
+          <div className="glass-card bg-background/95 w-full max-w-md rounded-3xl z-10 p-8 border border-blue-500/30 shadow-glow animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-6 h-6 text-green-500"/> Secure Checkout
+              </h2>
+              {!isProcessingPayment && (
+                <button onClick={() => setShowPaymentModal(false)} className="p-2 hover:bg-white/10 rounded-full">
+                  <X className="w-5 h-5 text-foreground"/>
+                </button>
+              )}
+            </div>
+            
+            <form onSubmit={processFinalBooking} className="space-y-5">
+              <div className="bg-black/5 dark:bg-white/5 p-4 rounded-2xl flex justify-between items-center mb-6">
+                <span className="font-bold text-foreground-muted">Total to pay</span>
+                <span className="text-2xl font-black text-primary">Rs. {doctor.fee + 100}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-foreground mb-2">Card / Account Number</label>
+                <div className="relative">
+                  <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground-muted" />
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="0000 0000 0000 0000" 
+                    className="w-full pl-12 pr-4 py-3 bg-white dark:bg-zinc-900 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground font-medium tracking-widest"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-2">Expiry Date</label>
+                  <input type="text" required placeholder="MM/YY" className="w-full px-4 py-3 bg-white dark:bg-zinc-900 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground font-medium text-center" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-foreground mb-2">CVV</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+                    <input type="password" required placeholder="***" maxLength={3} className="w-full pl-9 pr-4 py-3 bg-white dark:bg-zinc-900 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground font-medium tracking-widest text-center" />
+                  </div>
+                </div>
+              </div>
+
+              <Button type="submit" disabled={isProcessingPayment} className="w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white rounded-full font-black py-6 mt-4 hover-wave btn-glow border-0 text-lg">
+                {isProcessingPayment ? 'Processing Payment...' : `Pay Rs. ${doctor.fee + 100}`}
+              </Button>
+              <p className="text-center text-xs text-foreground-muted font-medium mt-4 flex items-center justify-center gap-1">
+                <Lock className="w-3 h-3" /> Payments are 256-bit encrypted.
+              </p>
+            </form>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 py-12 relative overflow-hidden">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-300/10 rounded-full blur-3xl -z-10 float-slow" />
         
@@ -129,16 +204,12 @@ export default function BookingPage() {
             {/* Right Column: Booking Steps */}
             <div className="md:col-span-2 space-y-6">
               
-              {/* Step 1 & 2 */}
               <div className="glass-card p-6 md:p-8 rounded-3xl space-y-8">
-                
-                {/* CUSTOM DATE PICKER */}
                 <div className="relative">
                   <h3 className="font-bold text-foreground flex items-center gap-2 mb-4 text-lg">
                     <CalendarIcon className="w-5 h-5 text-primary" /> 1. Select Date
                   </h3>
                   
-                  {/* Fake Input Trigger */}
                   <div 
                     onClick={() => setShowCalendar(true)}
                     className="w-full max-w-sm px-5 py-3.5 bg-white dark:bg-zinc-800 border border-blue-200 dark:border-zinc-700 rounded-2xl flex items-center justify-between cursor-pointer hover:border-primary transition-colors text-foreground font-bold shadow-sm"
@@ -148,46 +219,23 @@ export default function BookingPage() {
                   </div>
                   <p className="text-xs text-red-500 font-semibold mt-2 ml-2">Note: {doctor.off}. Bookings on these days will be invalid.</p>
 
-                  {/* Calendar Dropdown Popup */}
                   {showCalendar && (
                     <>
-                      {/* Invisible overlay to close calendar when clicking outside */}
                       <div className="fixed inset-0 z-40" onClick={() => setShowCalendar(false)} />
-                      
                       <div className="absolute top-[85px] left-0 mt-2 w-full max-w-sm z-50 glass-card bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-blue-200 dark:border-zinc-700 shadow-2xl rounded-2xl p-5 animate-in fade-in slide-in-from-top-2">
-                        
-                        {/* Month/Year Header */}
                         <div className="flex items-center justify-between mb-4">
-                          <button onClick={prevMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors text-foreground">
-                            <ChevronLeft className="w-5 h-5" />
-                          </button>
-                          <div className="font-black text-foreground text-lg">
-                            {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                          </div>
-                          <button onClick={nextMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors text-foreground">
-                            <ChevronRight className="w-5 h-5" />
-                          </button>
+                          <button onClick={prevMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors text-foreground"><ChevronLeft className="w-5 h-5" /></button>
+                          <div className="font-black text-foreground text-lg">{MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}</div>
+                          <button onClick={nextMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors text-foreground"><ChevronRight className="w-5 h-5" /></button>
                         </div>
-
-                        {/* Days of Week */}
                         <div className="grid grid-cols-7 mb-2">
-                          {DAYS_OF_WEEK.map(day => (
-                            <div key={day} className="text-center text-xs font-bold text-foreground-muted pb-2">
-                              {day}
-                            </div>
-                          ))}
+                          {DAYS_OF_WEEK.map(day => <div key={day} className="text-center text-xs font-bold text-foreground-muted pb-2">{day}</div>)}
                         </div>
-
-                        {/* Calendar Grid */}
                         <div className="grid grid-cols-7 gap-1">
-                          {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                            <div key={`empty-${i}`} className="p-2" />
-                          ))}
+                          {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`empty-${i}`} className="p-2" />)}
                           {Array.from({ length: daysInMonth }).map((_, i) => {
                             const dayNumber = i + 1;
                             const isToday = dayNumber === new Date().getDate() && currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear();
-                            
-                            // Check if this day matches the currently selected date
                             const currentDateObj = selectedDate ? new Date(selectedDate) : null;
                             const isSelected = currentDateObj?.getDate() === dayNumber && currentDateObj?.getMonth() === currentMonth.getMonth() && currentDateObj?.getFullYear() === currentMonth.getFullYear();
 
@@ -196,11 +244,7 @@ export default function BookingPage() {
                                 key={dayNumber}
                                 onClick={() => handleSelectDate(dayNumber)}
                                 className={`h-10 w-full flex items-center justify-center rounded-xl text-sm font-bold transition-all hover-wave ${
-                                  isSelected
-                                    ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-glow'
-                                    : isToday
-                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-primary dark:text-blue-400'
-                                    : 'text-foreground hover:bg-black/5 dark:hover:bg-white/10'
+                                  isSelected ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white shadow-glow' : isToday ? 'bg-blue-100 dark:bg-blue-900/40 text-primary dark:text-blue-400' : 'text-foreground hover:bg-black/5 dark:hover:bg-white/10'
                                 }`}
                               >
                                 {dayNumber}
@@ -223,9 +267,7 @@ export default function BookingPage() {
                         key={time}
                         onClick={() => setSelectedTime(time)}
                         className={`py-3 px-4 hover-wave rounded-xl font-bold text-sm transition-all border ${
-                          selectedTime === time 
-                            ? 'bg-primary text-white border-primary shadow-md scale-105' 
-                            : 'bg-white dark:bg-zinc-800 text-foreground border-blue-200 dark:border-zinc-700 hover:border-primary hover:text-primary hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                          selectedTime === time ? 'bg-primary text-white border-primary shadow-md scale-105' : 'bg-white dark:bg-zinc-800 text-foreground border-blue-200 dark:border-zinc-700 hover:border-primary hover:text-primary hover:bg-blue-50 dark:hover:bg-blue-900/20'
                         }`}
                       >
                         {time}
@@ -235,22 +277,24 @@ export default function BookingPage() {
                 </div>
               </div>
 
-              {/* Step 3: Payment */}
               <div className={`glass-card p-6 md:p-8 rounded-3xl space-y-6 ${(!selectedDate || !selectedTime) ? 'opacity-50 pointer-events-none' : ''}`}>
                 <h3 className="font-bold text-foreground text-lg">3. Payment Method</h3>
                 <div className="grid sm:grid-cols-2 gap-4">
-                  <button onClick={() => setPaymentMethod('online')} className={`hover-wave p-5 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentMethod === 'online' ? 'border-primary bg-blue-50/50 dark:bg-blue-900/20' : 'border-blue-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-blue-300'}`}>
+                  <button onClick={() => setPaymentMethod('online')} className={`hover-wave p-5 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentMethod === 'online' ? 'border-primary bg-blue-50/50 dark:bg-blue-900/20' : 'border-border bg-white dark:bg-zinc-900 hover:border-blue-300'}`}>
                     <CreditCard className={`w-8 h-8 ${paymentMethod === 'online' ? 'text-primary' : 'text-foreground-muted'}`} />
                     <div className="text-center"><div className="font-bold text-foreground">Pay Online</div><div className="text-xs text-foreground-muted mt-1">Debit / Credit Card</div></div>
                   </button>
-                  <button onClick={() => setPaymentMethod('cash')} className={`hover-wave p-5 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentMethod === 'cash' ? 'border-primary bg-blue-50/50 dark:bg-blue-900/20' : 'border-blue-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-blue-300'}`}>
+                  <button onClick={() => setPaymentMethod('cash')} className={`hover-wave p-5 rounded-3xl border-2 flex flex-col items-center gap-3 transition-all ${paymentMethod === 'cash' ? 'border-primary bg-blue-50/50 dark:bg-blue-900/20' : 'border-border bg-white dark:bg-zinc-900 hover:border-blue-300'}`}>
                     <Wallet className={`w-8 h-8 ${paymentMethod === 'cash' ? 'text-primary' : 'text-foreground-muted'}`} />
                     <div className="text-center"><div className="font-bold text-foreground">Pay at Clinic</div><div className="text-xs text-foreground-muted mt-1">Cash on arrival</div></div>
                   </button>
                 </div>
 
-                <Button onClick={handleBooking} disabled={isSubmitting} className="hover-wave w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-glow transition-all duration-300 font-bold py-6 text-base rounded-full btn-glow border-0 mt-4">
-                  {isSubmitting ? 'Confirming Appointment...' : `Confirm Booking • Rs. ${doctor.fee + 100}`}
+                <Button 
+                  onClick={handleInitialBookingClick} 
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-glow transition-all duration-300 font-bold py-6 text-base rounded-full btn-glow border-0 mt-4 hover-wave"
+                >
+                  Confirm Booking • Rs. {doctor.fee + 100}
                 </Button>
               </div>
             </div>
