@@ -9,65 +9,46 @@ import { createClient } from '@/lib/supabase/client';
 import { Calendar, Clock, User, X, Edit2, AlertCircle, CheckCircle2, ArrowLeft, History } from 'lucide-react';
 import Link from 'next/link';
 
-// Mocking Patient Data
-const INITIAL_APPOINTMENTS = [
-  {
-    id: 'appt_1',
-    doctorName: 'Dr. Tariq Mahmood',
-    specialty: 'Cardiologist',
-    date: '2026-06-25',
-    time: '11:00 AM',
-    fee: 2600,
-    status: 'Upcoming',
-    bg: 'from-blue-600 to-blue-400',
-    initials: 'TM'
-  },
-  {
-    id: 'appt_2',
-    doctorName: 'Dr. Ayesha Khan',
-    specialty: 'Dermatologist',
-    date: '2026-06-28',
-    time: '04:30 PM',
-    fee: 2100,
-    status: 'Upcoming',
-    bg: 'from-zinc-700 to-zinc-900',
-    initials: 'AK'
-  },
-  {
-    id: 'appt_3',
-    doctorName: 'Dr. Salman Raza',
-    specialty: 'Pediatrician',
-    date: '2026-05-10',
-    time: '10:00 AM',
-    fee: 1900,
-    status: 'Completed',
-    bg: 'from-cyan-400 to-blue-500',
-    initials: 'SR'
-  }
-];
-
 export default function PatientDashboard() {
   const supabase = createClient();
   const router = useRouter();
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [appointments, setAppointments] = useState(INITIAL_APPOINTMENTS);
   
-  // --- ROLE GUARD ---
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [patient, setPatient] = useState<any>(null);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  
+  // --- ROLE GUARD & LIVE DATA FETCHING ---
   useEffect(() => {
-    const checkRole = async () => {
+    const checkRoleAndFetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push('/login');
         return;
       }
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       if (profile?.role !== 'patient') {
         router.push('/dashboard/doctor');
-      } else {
-        setCheckingAuth(false);
-      }
+        return;
+      } 
+      
+      setPatient(profile);
+      setCheckingAuth(false);
+
+      // Fetch Real Appointments from Supabase
+      // Using a join to grab the doctor's details from the profiles table
+      const { data: appts } = await supabase
+        .from('appointments')
+        .select(`
+          *,
+          doctor:profiles!doctor_id(full_name, specialty, bg, initials)
+        `)
+        .eq('patient_id', user.id)
+        .order('appointment_date', { ascending: false });
+
+      if (appts) setAppointments(appts);
     };
-    checkRole();
+    checkRoleAndFetchData();
   }, [router, supabase]);
 
   // Modal States
@@ -78,31 +59,39 @@ export default function PatientDashboard() {
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
 
-  // Actions
-  const handleCancel = () => {
+  // --- LIVE DATABASE ACTIONS ---
+  const handleCancel = async () => {
     if (cancelModal.apptId) {
+      // 1. Optimistic UI Update (Instant feedback)
       setAppointments(current => 
         current.map(appt => appt.id === cancelModal.apptId ? { ...appt, status: 'Canceled' } : appt)
       );
+      // 2. Real Database Update
+      await supabase.from('appointments').update({ status: 'Canceled' }).eq('id', cancelModal.apptId);
+      
       setCancelModal({ isOpen: false, apptId: null });
     }
   };
 
-  const handleReschedule = () => {
+  const handleReschedule = async () => {
     if (rescheduleModal.apptId && newDate && newTime) {
+      // 1. Optimistic UI Update
       setAppointments(current => 
-        current.map(appt => appt.id === rescheduleModal.apptId ? { ...appt, date: newDate, time: newTime } : appt)
+        current.map(appt => appt.id === rescheduleModal.apptId ? { ...appt, appointment_date: newDate, appointment_time: newTime } : appt)
       );
+      // 2. Real Database Update
+      await supabase.from('appointments').update({ appointment_date: newDate, appointment_time: newTime }).eq('id', rescheduleModal.apptId);
+      
       setRescheduleModal({ isOpen: false, apptId: null });
       setNewDate('');
       setNewTime('');
     }
   };
 
-  const upcoming = appointments.filter(a => a.status === 'Upcoming');
+  const upcoming = appointments.filter(a => a.status === 'Pending' || a.status === 'Upcoming' || a.status === 'Confirmed');
   const past = appointments.filter(a => a.status === 'Completed' || a.status === 'Canceled');
 
-  if (checkingAuth) return <div className="min-h-screen flex items-center justify-center font-bold text-primary animate-pulse">Verifying Access...</div>;
+  if (checkingAuth) return <div className="min-h-screen flex items-center justify-center font-bold text-primary animate-pulse">Loading Secure Dashboard...</div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
@@ -118,7 +107,6 @@ export default function PatientDashboard() {
             </div>
             <h2 className="text-2xl font-black text-foreground text-center mb-2">Cancel Appointment?</h2>
             <p className="text-foreground-muted text-center mb-8 font-medium">Are you sure you want to cancel this appointment? This action cannot be undone.</p>
-            {/* FIXED OVERFLOW ISSUE HERE: flex-col sm:flex-row and flex-1 */}
             <div className="flex flex-col sm:flex-row gap-4 w-full">
               <Button onClick={() => setCancelModal({ isOpen: false, apptId: null })} variant="outline" className="flex-1 rounded-full hover-wave">Keep It</Button>
               <Button onClick={handleCancel} className="flex-1 bg-red-500 hover:bg-red-600 text-white rounded-full border-0 hover-wave">Yes, Cancel</Button>
@@ -184,7 +172,7 @@ export default function PatientDashboard() {
                 <ArrowLeft className="w-5 h-5" /> Back to Home
               </Link>
               <h1 className="text-3xl md:text-4xl font-black text-foreground">
-                Hello, <span className="text-primary dark:text-blue-400">M Tahseen Alam</span> 👋
+                Hello, <span className="text-primary dark:text-blue-400">{patient?.full_name || 'Patient'}</span> 👋
               </h1>
               <p className="text-foreground-muted font-medium mt-1">Manage your appointments and medical records.</p>
             </div>
@@ -209,44 +197,52 @@ export default function PatientDashboard() {
               </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-6">
-                {upcoming.map((appt) => (
-                  <div key={appt.id} className="glass-card p-6 rounded-3xl border border-blue-500/20 shadow-[0_10px_30px_rgba(59,130,246,0.1)] relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
-                    
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-14 h-14 bg-gradient-to-br ${appt.bg} rounded-full flex items-center justify-center text-white font-black text-lg shadow-md shrink-0`}>
-                          {appt.initials}
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-foreground">{appt.doctorName}</h3>
-                          <p className="text-primary dark:text-blue-400 font-bold text-xs">{appt.specialty}</p>
-                        </div>
-                      </div>
-                      <span className="bg-blue-500/10 text-primary text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider">Confirmed</span>
-                    </div>
+                {upcoming.map((appt) => {
+                  // Fallbacks in case the doctor table join returns null
+                  const docName = appt.doctor?.full_name || 'Doctor';
+                  const docSpecialty = appt.doctor?.specialty || 'Consultation';
+                  const docInitials = appt.doctor?.initials || 'DR';
+                  const docBg = appt.doctor?.bg || 'from-blue-600 to-blue-400';
 
-                    <div className="bg-black/5 dark:bg-white/5 rounded-2xl p-4 mb-6 grid grid-cols-2 gap-4">
-                      <div className="flex items-center gap-3">
-                        <Calendar className="w-5 h-5 text-foreground-muted" />
-                        <div><p className="text-[10px] text-foreground-muted font-bold uppercase">Date</p><p className="text-sm font-black text-foreground">{appt.date}</p></div>
+                  return (
+                    <div key={appt.id} className="glass-card p-6 rounded-3xl border border-blue-500/20 shadow-[0_10px_30px_rgba(59,130,246,0.1)] relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
+                      
+                      <div className="flex justify-between items-start mb-6">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-14 h-14 bg-gradient-to-br ${docBg} rounded-full flex items-center justify-center text-white font-black text-lg shadow-md shrink-0`}>
+                            {docInitials}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-bold text-foreground">{docName}</h3>
+                            <p className="text-primary dark:text-blue-400 font-bold text-xs">{docSpecialty}</p>
+                          </div>
+                        </div>
+                        <span className="bg-blue-500/10 text-primary text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider">{appt.status}</span>
                       </div>
-                      <div className="flex items-center gap-3 border-l border-border/50 pl-4">
-                        <Clock className="w-5 h-5 text-foreground-muted" />
-                        <div><p className="text-[10px] text-foreground-muted font-bold uppercase">Time</p><p className="text-sm font-black text-foreground">{appt.time}</p></div>
-                      </div>
-                    </div>
 
-                    <div className="flex gap-3">
-                      <Button onClick={() => setRescheduleModal({ isOpen: true, apptId: appt.id })} className="flex-1 bg-white dark:bg-zinc-800 text-foreground border-2 border-border hover:border-primary hover:text-primary rounded-full hover-wave font-bold transition-all">
-                        <Edit2 className="w-4 h-4 mr-2" /> Reschedule
-                      </Button>
-                      <Button onClick={() => setCancelModal({ isOpen: true, apptId: appt.id })} variant="outline" className="flex-1 bg-red-500/10 text-red-500 border-0 hover:bg-red-500 hover:text-white rounded-full hover-wave font-bold transition-all">
-                        <X className="w-4 h-4 mr-2" /> Cancel
-                      </Button>
+                      <div className="bg-black/5 dark:bg-white/5 rounded-2xl p-4 mb-6 grid grid-cols-2 gap-4">
+                        <div className="flex items-center gap-3">
+                          <Calendar className="w-5 h-5 text-foreground-muted" />
+                          <div><p className="text-[10px] text-foreground-muted font-bold uppercase">Date</p><p className="text-sm font-black text-foreground">{appt.appointment_date}</p></div>
+                        </div>
+                        <div className="flex items-center gap-3 border-l border-border/50 pl-4">
+                          <Clock className="w-5 h-5 text-foreground-muted" />
+                          <div><p className="text-[10px] text-foreground-muted font-bold uppercase">Time</p><p className="text-sm font-black text-foreground">{appt.appointment_time}</p></div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <Button onClick={() => setRescheduleModal({ isOpen: true, apptId: appt.id })} className="flex-1 bg-white dark:bg-zinc-800 text-foreground border-2 border-border hover:border-primary hover:text-primary rounded-full hover-wave font-bold transition-all">
+                          <Edit2 className="w-4 h-4 mr-2" /> Reschedule
+                        </Button>
+                        <Button onClick={() => setCancelModal({ isOpen: true, apptId: appt.id })} variant="outline" className="flex-1 bg-red-500/10 text-red-500 border-0 hover:bg-red-500 hover:text-white rounded-full hover-wave font-bold transition-all">
+                          <X className="w-4 h-4 mr-2" /> Cancel
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -270,12 +266,12 @@ export default function PatientDashboard() {
                     {past.map((appt) => (
                       <tr key={appt.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <td className="p-4">
-                          <div className="font-bold text-foreground">{appt.doctorName}</div>
-                          <div className="text-xs text-foreground-muted font-medium">{appt.specialty}</div>
+                          <div className="font-bold text-foreground">{appt.doctor?.full_name || 'Doctor'}</div>
+                          <div className="text-xs text-foreground-muted font-medium">{appt.doctor?.specialty || 'Consultation'}</div>
                         </td>
                         <td className="p-4">
-                          <div className="font-bold text-foreground">{appt.date}</div>
-                          <div className="text-xs text-foreground-muted font-medium">{appt.time}</div>
+                          <div className="font-bold text-foreground">{appt.appointment_date}</div>
+                          <div className="text-xs text-foreground-muted font-medium">{appt.appointment_time}</div>
                         </td>
                         <td className="p-4">
                           <span className={`text-xs font-bold px-3 py-1 rounded-full flex items-center w-fit gap-1 ${

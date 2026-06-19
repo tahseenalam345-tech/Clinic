@@ -1,44 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Clock, Calendar, ArrowRight, User, X } from 'lucide-react';
 import Link from 'next/link';
 
-// Detailed doctor data with 30-minute slots
-const DOCTORS_WITH_SLOTS = [
-  { 
-    id: '1', name: 'Dr. Tariq Mahmood', specialty: 'Cardiologist', fee: 2500, initials: 'TM', bg: 'from-blue-600 to-blue-400',
-    slots: ['10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:30 PM', '01:00 PM', '01:30 PM']
-  },
-  { 
-    id: '2', name: 'Dr. Ayesha Khan', specialty: 'Dermatologist', fee: 2000, initials: 'AK', bg: 'from-zinc-700 to-zinc-900',
-    slots: ['04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM', '06:30 PM', '07:00 PM', '07:30 PM']
-  },
-  { 
-    id: '3', name: 'Dr. Salman Raza', specialty: 'Pediatrician', fee: 1800, initials: 'SR', bg: 'from-cyan-400 to-blue-500',
-    slots: ['09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:30 AM', '12:00 PM', '12:30 PM']
-  },
-  { 
-    id: '4', name: 'Dr. Fatima Ali', specialty: 'Orthopedic Surgeon', fee: 3000, initials: 'FA', bg: 'from-emerald-400 to-teal-500',
-    slots: ['02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:30 PM', '05:00 PM', '05:30 PM']
-  },
-  { 
-    id: '5', name: 'Dr. Usman Ahmed', specialty: 'General Physician', fee: 1500, initials: 'UA', bg: 'from-orange-400 to-red-500',
-    slots: ['06:00 PM', '06:30 PM', '07:00 PM', '07:30 PM', '08:30 PM', '09:00 PM', '09:30 PM']
-  },
-];
-
-const SPECIALTIES = ['All Specialties', 'Cardiologist', 'Dermatologist', 'Pediatrician', 'Orthopedic Surgeon', 'General Physician'];
+// Standard slots for the Quick Book UI
+const STANDARD_SLOTS = ['10:00 AM', '11:30 AM', '04:00 PM', '05:30 PM'];
 
 export function QuickBook() {
+  const supabase = createClient();
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
   const [selectedSpecialty, setSelectedSpecialty] = useState('All Specialties');
   const [selectedSlot, setSelectedSlot] = useState<{ doctor: any, time: string } | null>(null);
 
+  // --- LIVE DATA FETCHING ---
+  useEffect(() => {
+    const fetchDoctors = async () => {
+      setIsLoading(true);
+      // Fetch active doctors (limit to 5 for the quick-book section)
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'doctor')
+        .limit(5);
+        
+      if (data) setDoctors(data);
+      setIsLoading(false);
+    };
+    fetchDoctors();
+  }, [supabase]);
+
+  // Dynamically extract unique specialties from the live database
+  const specialties = ['All Specialties', ...Array.from(new Set(doctors.map(d => d.specialty).filter(Boolean)))];
+
   // Filter doctors based on dropdown
   const filteredDoctors = selectedSpecialty === 'All Specialties' 
-    ? DOCTORS_WITH_SLOTS 
-    : DOCTORS_WITH_SLOTS.filter(d => d.specialty === selectedSpecialty);
+    ? doctors 
+    : doctors.filter(d => d.specialty === selectedSpecialty);
 
   return (
     <section className="py-12 md:py-24 bg-gradient-to-b from-blue-50/30 to-background dark:from-zinc-950 dark:to-background relative">
@@ -48,7 +50,7 @@ export function QuickBook() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
           <div>
             <h2 className="text-3xl md:text-4xl font-black text-foreground text-center md:text-left">
-              Quick <span className="text-gradient">Availability</span>
+              Quick <span className="text-gradient drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]">Availability</span>
             </h2>
             <p className="text-foreground-muted font-medium mt-2 text-center md:text-left">Select a specialty and grab an open slot instantly.</p>
           </div>
@@ -60,9 +62,10 @@ export function QuickBook() {
                 setSelectedSpecialty(e.target.value);
                 setSelectedSlot(null); 
               }}
-              className="w-full appearance-none bg-white dark:bg-zinc-900 border-2 border-blue-100 dark:border-zinc-800 text-foreground font-bold py-3 px-5 rounded-full focus:outline-none focus:border-primary hover:border-blue-300 transition-colors shadow-sm cursor-pointer"
+              disabled={isLoading}
+              className="w-full appearance-none bg-white dark:bg-zinc-900 border-2 border-blue-100 dark:border-zinc-800 text-foreground font-bold py-3 px-5 rounded-full focus:outline-none focus:border-primary hover:border-blue-300 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
             >
-              {SPECIALTIES.map(spec => (
+              {specialties.map((spec: any) => (
                 <option key={spec} value={spec}>{spec}</option>
               ))}
             </select>
@@ -79,25 +82,29 @@ export function QuickBook() {
           
           {/* Left Column: Doctor Slots */}
           <div className="lg:col-span-2 space-y-6">
-            {filteredDoctors.map((doc) => (
-              <div key={doc.id} className="glass-card p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-blue-50 dark:border-zinc-800">
+            {isLoading ? (
+               <div className="text-center p-8 glass-card rounded-3xl font-bold text-primary animate-pulse border border-dashed border-blue-200 dark:border-zinc-800">
+                 Loading available slots from database...
+               </div>
+            ) : filteredDoctors.map((doc) => (
+              <div key={doc.id} className="glass-card p-6 rounded-3xl bg-white dark:bg-[#111113] border border-blue-50 dark:border-zinc-800">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-border/50">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${doc.bg} rounded-full flex items-center justify-center text-white font-black text-xs shadow-md shrink-0`}>
-                      {doc.initials}
+                    <div className={`w-10 h-10 bg-gradient-to-br ${doc.bg || 'from-blue-600 to-blue-400'} rounded-full flex items-center justify-center text-white font-black text-xs shadow-md shrink-0`}>
+                      {doc.initials || doc.full_name?.substring(0, 2).toUpperCase() || 'DR'}
                     </div>
                     <div>
-                      <h4 className="font-bold text-foreground">{doc.name}</h4>
-                      <p className="text-xs text-primary font-semibold">{doc.specialty}</p>
+                      <h4 className="font-bold text-foreground">{doc.full_name}</h4>
+                      <p className="text-xs text-primary font-semibold">{doc.specialty || 'General'}</p>
                     </div>
                   </div>
                   <div className="text-sm font-black text-foreground bg-blue-50 dark:bg-zinc-800 px-3 py-1 rounded-full w-fit">
-                    Rs. {doc.fee}
+                    Rs. {doc.fee || 1000}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {doc.slots.map((time) => {
+                  {STANDARD_SLOTS.map((time) => {
                     const isSelected = selectedSlot?.doctor.id === doc.id && selectedSlot?.time === time;
                     return (
                       <button
@@ -117,8 +124,8 @@ export function QuickBook() {
               </div>
             ))}
 
-            {filteredDoctors.length === 0 && (
-              <div className="text-center p-8 glass-card rounded-3xl">
+            {!isLoading && filteredDoctors.length === 0 && (
+              <div className="text-center p-8 glass-card rounded-3xl border border-dashed border-zinc-800">
                 <p className="text-foreground-muted font-bold">No doctors found for this specialty.</p>
               </div>
             )}
@@ -147,7 +154,7 @@ export function QuickBook() {
                 : 'translate-y-[120%] lg:translate-y-4 opacity-0 lg:opacity-50 pointer-events-none'
               }
             `}>
-              <div className="glass-card p-6 md:p-8 rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-[0_-10px_40px_rgba(0,0,0,0.3)] lg:shadow-2xl relative overflow-hidden pointer-events-auto">
+              <div className="glass-card p-6 md:p-8 rounded-3xl bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-[0_-10px_40px_rgba(0,0,0,0.3)] lg:shadow-[0_0_40px_rgba(59,130,246,0.3)] relative overflow-hidden pointer-events-auto border-0">
                 
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
                 
@@ -173,7 +180,7 @@ export function QuickBook() {
                         <User className="w-5 h-5 text-blue-200" />
                         <div>
                           <p className="text-xs text-blue-200 font-medium">Doctor</p>
-                          <p className="font-bold">{selectedSlot.doctor.name}</p>
+                          <p className="font-bold">{selectedSlot.doctor.full_name}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -186,13 +193,13 @@ export function QuickBook() {
                       <div className="flex items-center gap-3 border-t border-white/20 pt-4 mt-2">
                         <div>
                           <p className="text-xs text-blue-200 font-medium">Consultation Fee</p>
-                          <p className="font-black text-xl">Rs. {selectedSlot.doctor.fee}</p>
+                          <p className="font-black text-xl">Rs. {selectedSlot.doctor.fee || 1000}</p>
                         </div>
                       </div>
                     </div>
 
                     <Link href={`/book/${selectedSlot.doctor.id}`}>
-                      <Button className="w-full bg-white text-blue-700 hover:bg-blue-50 font-black rounded-full py-6 text-base shadow-lg hover:shadow-xl transition-all hover-wave">
+                      <Button className="w-full bg-white text-blue-700 hover:bg-blue-50 font-black rounded-full py-6 text-base shadow-lg hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] transition-all hover-wave">
                         Proceed to Booking <ArrowRight className="ml-2 w-5 h-5" />
                       </Button>
                     </Link>

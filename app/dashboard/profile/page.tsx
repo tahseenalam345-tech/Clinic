@@ -8,12 +8,6 @@ import { createClient } from '@/lib/supabase/client';
 import { User, FileText, Download, ArrowLeft, Save, Activity, Droplet, Upload, Plus, X, Stethoscope, Scale, Ruler, Trash2, Edit, CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 
-// Fallback Mock Data
-const MOCK_RECORDS = [
-  { id: '1', created_at: 'June 10, 2026', doctor_name: 'Dr. Tariq Mahmood', type: 'Prescription', file_url: 'Rx_Cardiology.pdf' },
-  { id: '2', created_at: 'May 22, 2026', doctor_name: 'Crescent Lab', type: 'Blood Test Report', file_url: 'CBC_Report.pdf' },
-];
-
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -33,24 +27,24 @@ export default function PatientProfile() {
   
   // Real State for Profile
   const [profile, setProfile] = useState({
-    full_name: 'M Tahseen Alam',
-    email: 'tahseen@example.com',
-    phone: '0300 1234567',
-    dob: '2003-08-15', // Set to align with 22 years of age
+    full_name: '',
+    email: '',
+    phone: '',
+    dob: '2003-08-15', 
     gender: 'Male',
-    emergency_contact: '0300 7654321',
+    emergency_contact: '',
     blood_group: 'O+',
     weight: '75 kg',
     height: '5 ft 10 in',
     disability: 'None',
     allergies: 'None',
     chronic_diseases: 'None',
-    current_symptoms: 'Mild stomach pain'
+    current_symptoms: ''
   });
   
-  const [records, setRecords] = useState<any[]>(MOCK_RECORDS);
+  const [records, setRecords] = useState<any[]>([]); 
   const [isSaving, setIsSaving] = useState(false);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isLoadingDB, setIsLoadingDB] = useState(true);
 
   // Modals & Popovers State
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -63,14 +57,13 @@ export default function PatientProfile() {
   const [calendarDate, setCalendarDate] = useState(new Date(profile.dob || '2003-08-15'));
 
   // --- STYLING ---
-  // The exact Neon Glow requested for every field
   const neonInputClass = "w-full px-5 py-3.5 bg-[#111113] border-2 border-zinc-800 rounded-full focus:outline-none focus:border-blue-500 focus:shadow-[0_0_20px_rgba(59,130,246,0.6)] focus:ring-4 focus:ring-blue-500/20 hover:border-blue-500/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all duration-300 text-white font-bold text-sm relative z-10 appearance-none";
 
   // --- AUTO AGE CALCULATOR ---
   const calculatedAge = useMemo(() => {
     if (!profile.dob) return 'Select DOB';
     const dob = new Date(profile.dob);
-    const now = new Date(); // June 18, 2026
+    const now = new Date(); 
     let years = now.getFullYear() - dob.getFullYear();
     let months = now.getMonth() - dob.getMonth();
     let days = now.getDate() - dob.getDate();
@@ -86,25 +79,36 @@ export default function PatientProfile() {
     return `${years} yrs, ${months} mos, ${days} days`;
   }, [profile.dob]);
 
-  // Load Data on Mount
+  // --- LIVE DATA FETCHING ---
   useEffect(() => {
     const loadData = async () => {
+      setIsLoadingDB(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (prof) setProfile(prev => ({ ...prev, ...prof }));
+      if (prof) {
+        setProfile(prev => ({ ...prev, ...prof }));
+        if (prof.dob) setCalendarDate(new Date(prof.dob));
+      }
+
       const { data: recs } = await supabase.from('medical_records').select('*').eq('patient_id', user.id).order('created_at', { ascending: false });
-      if (recs && recs.length > 0) setRecords(recs);
+      if (recs) setRecords(recs);
+      
+      setIsLoadingDB(false);
     };
     loadData();
-  }, []);
+  }, [supabase]);
 
+  // --- SAVE PROFILE TO DB ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) await supabase.from('profiles').upsert({ id: user.id, ...profile });
-    else await new Promise(resolve => setTimeout(resolve, 1000));
+    if (user) {
+      await supabase.from('profiles').upsert({ id: user.id, ...profile });
+      alert("Profile updated successfully!");
+    }
     setIsSaving(false);
   };
 
@@ -114,49 +118,96 @@ export default function PatientProfile() {
 
   const handleSelectDate = (day: number) => {
     const newDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
-    const formatted = newDate.toISOString().split('T')[0];
+    const offset = newDate.getTimezoneOffset();
+    const localDate = new Date(newDate.getTime() - (offset * 60 * 1000));
+    const formatted = localDate.toISOString().split('T')[0];
+    
     setProfile({ ...profile, dob: formatted });
     setShowDobCalendar(false);
   };
 
-  // --- RECORD MANAGEMENT ACTIONS ---
-  const handleDownload = async (id: string) => {
-    setDownloadingId(id);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setDownloadingId(null);
-  };
-
+  // --- LIVE RECORD MANAGEMENT WITH STORAGE ---
   const handleDeleteRecord = async (id: string) => {
     if(!confirm("Are you sure you want to permanently delete this report?")) return;
+    await supabase.from('medical_records').delete().eq('id', id);
     setRecords(records.filter(r => r.id !== id));
   };
 
   const openEditModal = (record: any) => {
-    setUploadData({ id: record.id, doctor: record.doctor_name, type: record.type, file: record.file_url });
+    setUploadData({ id: record.id, doctor: record.doctor_name, type: record.report_type, file: record.file_url });
     setShowEditModal(true);
   };
 
   const confirmUploadOrEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadData.doctor) return;
+    
     setIsUploading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     
     if (showEditModal) {
-      setRecords(records.map(r => r.id === uploadData.id ? { ...r, doctor_name: uploadData.doctor, type: uploadData.type } : r));
+      // 1. UPDATE EXISTING RECORD IN DB (Text only, not replacing file here for simplicity)
+      const { error } = await supabase
+        .from('medical_records')
+        .update({ doctor_name: uploadData.doctor, report_type: uploadData.type, title: uploadData.type })
+        .eq('id', uploadData.id);
+
+      if (!error) {
+        setRecords(records.map(r => r.id === uploadData.id ? { ...r, doctor_name: uploadData.doctor, report_type: uploadData.type } : r));
+      }
     } else {
+      // 2. REAL CLOUD STORAGE UPLOAD
+      let finalFileUrl = 'Unknown_File.pdf';
+
+      if (uploadData.file && typeof uploadData.file !== 'string') {
+        // Sanitize file name and create a unique path
+        const fileExt = uploadData.file.name.split('.').pop();
+        const safeFileName = uploadData.file.name.replace(/[^a-zA-Z0-9]/g, '_');
+        const filePath = `${user.id}_${Date.now()}_${safeFileName}.${fileExt}`;
+
+        // Upload physical file to Supabase Storage bucket
+        const { error: uploadError } = await supabase.storage
+          .from('medical_records')
+          .upload(filePath, uploadData.file);
+
+        if (uploadError) {
+          alert("Error uploading file: " + uploadError.message);
+          setIsUploading(false);
+          return;
+        }
+
+        // Get the public URL for the file we just uploaded
+        const { data: publicUrlData } = supabase.storage
+          .from('medical_records')
+          .getPublicUrl(filePath);
+
+        finalFileUrl = publicUrlData.publicUrl;
+      }
+
+      // 3. INSERT DATABASE RECORD WITH CLOUD URL
       const newRecord = {
-        id: Math.random().toString(),
-        created_at: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+        patient_id: user.id,
         doctor_name: uploadData.doctor,
-        type: uploadData.type,
-        file_url: typeof uploadData.file === 'object' && uploadData.file ? uploadData.file.name : 'Unknown_File.pdf'
+        report_type: uploadData.type,
+        title: uploadData.file && typeof uploadData.file !== 'string' ? uploadData.file.name : uploadData.type,
+        file_url: finalFileUrl,
+        uploaded_by: 'Patient'
       };
-      setRecords([newRecord, ...records]);
+
+      const { data, error } = await supabase.from('medical_records').insert([newRecord]).select().single();
+      if (data) {
+        setRecords([data, ...records]);
+      }
     }
-    setIsUploading(false); setShowUploadModal(false); setShowEditModal(false);
+
+    setIsUploading(false); 
+    setShowUploadModal(false); 
+    setShowEditModal(false);
     setUploadData({ id: '', doctor: '', type: 'Blood Test Report', file: null });
   };
+
+  if (isLoadingDB) return <div className="min-h-screen flex items-center justify-center font-bold text-primary animate-pulse">Loading Profile...</div>;
 
   return (
     <div className="min-h-screen flex flex-col bg-background relative">
@@ -205,12 +256,12 @@ export default function PatientProfile() {
               {!showEditModal && (
                 <div>
                   <label className="block text-sm font-bold text-foreground mb-2 ml-2">Attach PDF or Image</label>
-                  <input type="file" required accept=".pdf,.jpg,.png" onChange={e => setUploadData({...uploadData, file: e.target.files?.[0] || null})} className="w-full text-sm text-foreground-muted file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-primary file:text-white hover:file:bg-blue-600 transition-all cursor-pointer" />
+                  <input type="file" required accept=".pdf,.jpg,.png,.jpeg" onChange={e => setUploadData({...uploadData, file: e.target.files?.[0] || null})} className="w-full text-sm text-foreground-muted file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-primary file:text-white hover:file:bg-blue-600 transition-all cursor-pointer" />
                 </div>
               )}
 
               <Button type="submit" disabled={isUploading || (!showEditModal && !uploadData.file)} className={`w-full text-white rounded-full font-bold py-6 mt-4 hover-wave btn-glow border-0 ${showEditModal ? 'bg-amber-500 hover:bg-amber-600 shadow-[0_0_20px_rgba(245,158,11,0.4)]' : 'bg-gradient-to-r from-blue-500 to-blue-700 shadow-[0_0_20px_rgba(59,130,246,0.4)]'}`}>
-                {isUploading ? 'Processing...' : (showEditModal ? 'Save Changes' : 'Confirm Upload')}
+                {isUploading ? 'Uploading to Cloud...' : (showEditModal ? 'Save Changes' : 'Confirm Upload')}
               </Button>
             </form>
           </div>
@@ -406,35 +457,44 @@ export default function PatientProfile() {
                 </Button>
                 
                 <div className="space-y-4">
-                  {records.map((record) => (
-                    <div key={record.id} className="bg-[#111113] border border-zinc-800 p-4 rounded-3xl hover:border-blue-500/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all group">
-                      
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                            record.type === 'Prescription' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
-                          }`}>
-                            {record.type}
-                          </span>
-                          <h4 className="font-bold text-foreground text-sm mt-2">{record.doctor_name}</h4>
-                          <p className="text-xs text-foreground-muted font-medium">{record.created_at}</p>
+                  {records.length === 0 ? (
+                    <p className="text-sm text-foreground-muted italic text-center py-4">No records uploaded yet.</p>
+                  ) : (
+                    records.map((record) => (
+                      <div key={record.id} className="bg-[#111113] border border-zinc-800 p-4 rounded-3xl hover:border-blue-500/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all group">
+                        
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              record.report_type === 'Prescription' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
+                            }`}>
+                              {record.report_type}
+                            </span>
+                            <h4 className="font-bold text-foreground text-sm mt-2">{record.doctor_name}</h4>
+                            <p className="text-xs text-foreground-muted font-medium">{new Date(record.created_at).toLocaleDateString()}</p>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEditModal(record)} className="p-1.5 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white hover:shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full transition-all">
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteRecord(record.id)} className="p-1.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] rounded-full transition-all">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                         
-                        <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEditModal(record)} className="p-1.5 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white hover:shadow-[0_0_10px_rgba(245,158,11,0.5)] rounded-full transition-all">
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteRecord(record.id)} className="p-1.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] rounded-full transition-all">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <a 
+                          href={record.file_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center justify-center text-xs font-bold rounded-full h-9 border border-zinc-700 hover:bg-primary hover:text-white hover:border-primary hover:shadow-[0_0_15px_rgba(59,130,246,0.4)] transition-all mt-1"
+                        >
+                          <Download className="w-3 h-3 mr-2" /> View Report
+                        </a>
                       </div>
-                      
-                      <Button onClick={() => handleDownload(record.id)} disabled={downloadingId === record.id} variant="outline" className="w-full text-xs font-bold rounded-full h-9 border-zinc-700 hover:bg-primary hover:text-white hover:border-primary hover:shadow-[0_0_15px_rgba(59,130,246,0.4)] transition-all mt-1">
-                        {downloadingId === record.id ? 'Downloading...' : <><Download className="w-3 h-3 mr-2" /> {record.file_url}</>}
-                      </Button>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
 
               </div>
