@@ -18,6 +18,7 @@ export default function PatientDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   
   // --- ROLE GUARD & LIVE DATA FETCHING ---
+  // --- ROLE GUARD ---
   useEffect(() => {
     const checkRoleAndFetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -26,15 +27,24 @@ export default function PatientDashboard() {
         return;
       }
       
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profile?.role !== 'patient') {
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      
+      // Smart Routing (No loops!)
+      if (profile?.role === 'admin') {
+        router.push('/dashboard/admin');
+        return;
+      } else if (profile?.role === 'doctor') {
         router.push('/dashboard/doctor');
         return;
-      } 
+      } else if (profile?.role !== 'patient') {
+        router.push('/'); // Fallback if role is broken
+        return;
+      }
       
       setPatient(profile);
       setCheckingAuth(false);
 
+      // Fetch Real Appointments... (keep your existing fetch code below this)
       // Fetch Real Appointments from Supabase
       // Using a join to grab the doctor's details from the profiles table
       const { data: appts } = await supabase

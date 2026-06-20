@@ -36,6 +36,7 @@ export default function DoctorDashboard() {
   const [doctorProfile, setDoctorProfile] = useState<any>(null);
 
   // --- ROLE GUARD & DOCTOR FETCH ---
+  // --- ROLE GUARD & DOCTOR FETCH ---
   useEffect(() => {
     const checkRole = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -43,13 +44,23 @@ export default function DoctorDashboard() {
         router.push('/login');
         return;
       }
+      
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profile?.role !== 'doctor') {
+      
+      // Smart Routing (No loops!)
+      if (profile?.role === 'admin') {
+        router.push('/dashboard/admin');
+        return;
+      } else if (profile?.role === 'patient') {
         router.push('/dashboard/patient');
-      } else {
-        setDoctorProfile(profile);
-        setIsAuthorized(true);
+        return;
+      } else if (profile?.role !== 'doctor') {
+        router.push('/'); // Fallback
+        return;
       }
+      
+      setDoctorProfile(profile);
+      setIsAuthorized(true);
     };
     checkRole();
   }, [router, supabase]);
