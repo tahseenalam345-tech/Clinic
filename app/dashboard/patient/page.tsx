@@ -19,6 +19,8 @@ export default function PatientDashboard() {
   
   // --- ROLE GUARD & LIVE DATA FETCHING ---
   // --- ROLE GUARD ---
+ // Put this at the top of your Patient dashboard
+  // --- ROLE GUARD ---
   useEffect(() => {
     const checkRoleAndFetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -27,32 +29,27 @@ export default function PatientDashboard() {
         return;
       }
       
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
-      // Smart Routing (No loops!)
-      if (profile?.role === 'admin') {
-        router.push('/dashboard/admin');
-        return;
-      } else if (profile?.role === 'doctor') {
-        router.push('/dashboard/doctor');
-        return;
-      } else if (profile?.role !== 'patient') {
-        router.push('/'); // Fallback if role is broken
-        return;
-      }
+      // Treat missing roles as 'patient' by default to prevent loops
+      const userRole = profile?.role || 'patient';
       
+      if (userRole === 'admin') {
+        window.location.href = '/dashboard/admin';
+        return;
+      } else if (userRole === 'doctor') {
+        window.location.href = '/dashboard/doctor';
+        return;
+      } 
+      
+      // If they are a patient (or defaulted to patient), let them in!
       setPatient(profile);
       setCheckingAuth(false);
 
-      // Fetch Real Appointments... (keep your existing fetch code below this)
       // Fetch Real Appointments from Supabase
-      // Using a join to grab the doctor's details from the profiles table
       const { data: appts } = await supabase
         .from('appointments')
-        .select(`
-          *,
-          doctor:profiles!doctor_id(full_name, specialty, bg, initials)
-        `)
+        .select(`*, doctor:profiles!doctor_id(full_name, specialty, bg, initials)`)
         .eq('patient_id', user.id)
         .order('appointment_date', { ascending: false });
 

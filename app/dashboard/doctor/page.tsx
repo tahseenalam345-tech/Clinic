@@ -37,33 +37,23 @@ export default function DoctorDashboard() {
 
   // --- ROLE GUARD & DOCTOR FETCH ---
   // --- ROLE GUARD & DOCTOR FETCH ---
+ // Put this at the top of your Doctor dashboard
   useEffect(() => {
     const checkRole = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+      if (!user) return router.push('/login');
       
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
-      // Smart Routing (No loops!)
-      if (profile?.role === 'admin') {
-        router.push('/dashboard/admin');
-        return;
-      } else if (profile?.role === 'patient') {
-        router.push('/dashboard/patient');
-        return;
-      } else if (profile?.role !== 'doctor') {
-        router.push('/'); // Fallback
+      // STRICT GUARD: If not a doctor, kick out. 
+      if (profile?.role !== 'doctor') {
+        window.location.href = '/'; 
         return;
       }
-      
-      setDoctorProfile(profile);
       setIsAuthorized(true);
     };
     checkRole();
-  }, [router, supabase]);
+  }, []);
 
   // Patient File Modal State
   const [viewingPatient, setViewingPatient] = useState<Appointment | null>(null);

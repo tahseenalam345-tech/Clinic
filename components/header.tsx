@@ -25,9 +25,15 @@ export function Header() {
   }, [supabase.auth]);
 
   const handleLogout = async () => {
+    // 1. Wipe the Supabase session
     await supabase.auth.signOut();
     setIsLoggedIn(false);
+    
+    // 2. Force the router to the homepage
     router.push('/');
+    
+    // 3. Clear the Next.js client cache so it forgets the user
+    router.refresh(); 
   };
 
   // Clean, page-only navigation architecture
@@ -79,7 +85,7 @@ export function Header() {
           <div className="flex items-center gap-2 md:gap-4">
             {isLoggedIn ? (
               <div className="flex items-center gap-2">
-                <Link href="/dashboard/patient">
+                <Link href="/dashboard">
                   <Button className="bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-glow transition-all duration-300 font-bold btn-glow rounded-full border-0 px-4 md:px-6 gap-2 hover-wave">
                     <User className="w-4 h-4" />
                     <span className="hidden sm:inline">Dashboard</span>
@@ -133,10 +139,10 @@ export function Header() {
               {/* Add Dashboard directly to mobile menu if logged in */}
               {isLoggedIn && (
                 <Link 
-                  href="/dashboard/patient" 
+                  href="/dashboard" 
                   onClick={() => setIsSidebarOpen(false)}
                   className={`text-lg font-bold transition-colors ${
-                    pathname === '/dashboard/patient' ? 'text-primary dark:text-blue-400' : 'text-foreground hover:text-primary'
+                    pathname?.startsWith('/dashboard') ? 'text-primary dark:text-blue-400' : 'text-foreground hover:text-primary'
                   }`}
                 >
                   Dashboard
