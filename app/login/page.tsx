@@ -65,15 +65,16 @@ function LoginContent() {
     setIsLoading(true);
     setError(null);
     
+    // BULLETPROOF FIX: Plant a temporary cookie to remember their choice
+    document.cookie = `google_signup_role=${role}; path=/; max-age=300;`;
+
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Pass the role securely through the callback URL
-        redirectTo: `${window.location.origin}/auth/callback?role=${role}`
+        redirectTo: `${window.location.origin}/auth/callback` // Removed the fragile URL parameter
       }
     });
 
-    // If Google isn't configured properly in Supabase, this will show you the exact error!
     if (oauthError) {
       setError(oauthError.message || "Google Auth failed. Check Supabase Provider settings.");
       setIsLoading(false);

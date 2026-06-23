@@ -5,11 +5,13 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const requestedRole = requestUrl.searchParams.get('role'); // Catch the role from Google login
   const origin = requestUrl.origin;
 
   if (code) {
     const cookieStore = await cookies();
+    
+    // 1. Grab the requested role from the cookie we planted!
+    const requestedRole = cookieStore.get('google_signup_role')?.value;
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,19 +31,22 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (user) {
-      // Fetch their newly created profile (from the SQL Trigger)
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
       
       let finalRole = profile?.role || 'patient';
 
-      // If they clicked "Doctor" on the UI before signing in with Google,
-      // and they aren't already an admin, update their profile to Doctor!
+      // 2. If they wanted to be a doctor, use our SECURE database function to upgrade them!
       if (requestedRole === 'doctor' && finalRole !== 'admin') {
-        await supabase.from('profiles').update({ role: 'doctor' }).eq('id', user.id);
-        finalRole = 'doctor';
+        const { error } = await supabase.rpc('set_user_as_doctor');
+        if (!error) {
+          finalRole = 'doctor';
+        }
       }
 
-      // Route securely based on their finalized role
+      // Clean up the temporary cookie
+      cookieStore.delete('google_signup_role');
+
+      // 3. Route securely based on their finalized role
       if (finalRole === 'admin') return NextResponse.redirect(new URL('/dashboard/admin', origin));
       if (finalRole === 'doctor') return NextResponse.redirect(new URL('/dashboard/doctor', origin));
       
