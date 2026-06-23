@@ -21,6 +21,7 @@ type Appointment = {
   payment_method: string;
   fee: number;
   status: string;
+  patient?: any; // To hold joined relational data if needed
 };
 
 export default function DoctorDashboard() {
@@ -35,27 +36,6 @@ export default function DoctorDashboard() {
   // Real Doctor Info
   const [doctorProfile, setDoctorProfile] = useState<any>(null);
 
-  // --- ROLE GUARD & DOCTOR FETCH ---
-  // --- ROLE GUARD & DOCTOR FETCH ---
- // Put this at the top of your Doctor dashboard
-  useEffect(() => {
-    const checkRole = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.push('/login');
-      
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      
-      // STRICT GUARD: If not a doctor, kick out. 
-      // STRICT GUARD: If not a doctor AND not an admin, kick out. 
-      if (profile?.role !== 'doctor' && profile?.role !== 'admin') {
-        window.location.href = '/'; 
-        return;
-      }
-      setIsAuthorized(true);
-    };
-    checkRole();
-  }, []);
-
   // Patient File Modal State
   const [viewingPatient, setViewingPatient] = useState<Appointment | null>(null);
   const [patientProfile, setPatientProfile] = useState<any>(null);
@@ -63,22 +43,56 @@ export default function DoctorDashboard() {
   const [isUploadingPrescription, setIsUploadingPrescription] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
 
+  // --- ROLE GUARD & DOCTOR FETCH ---
+  useEffect(() => {
+    const checkRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return router.push('/login');
+      
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      
+      // STRICT GUARD: If not a doctor AND not an admin, kick out. 
+      if (profile?.role !== 'doctor' && profile?.role !== 'admin') {
+        window.location.href = '/'; 
+        return;
+      }
+      
+      setDoctorProfile(profile); // FIXED: Actually save the profile so we can fetch their appointments!
+      setIsAuthorized(true);
+    };
+    checkRole();
+  }, [router, supabase]);
+
   // 1. Fetch live appointments for this doctor
   const fetchAppointments = async () => {
     if (!doctorProfile) return;
     setIsLoading(true);
+    
+    // Join with profiles table to ensure we always have the real patient name
     const { data } = await supabase
       .from('appointments')
-      .select('*')
+      .select(`
+        *,
+        patient:profiles!patient_id(full_name, email, phone)
+      `)
       .eq('doctor_id', doctorProfile.id)
       .order('appointment_date', { ascending: false });
       
-    if (data) setAppointments(data);
+    if (data) {
+      // Map it securely so your UI doesn't break
+      const mappedAppts = data.map(appt => ({
+        ...appt,
+        patient_name: appt.patient_name || appt.patient?.full_name || 'Unknown Patient'
+      }));
+      setAppointments(mappedAppts);
+    }
     setIsLoading(false);
   };
 
   useEffect(() => {
-    if (isAuthorized) fetchAppointments();
+    if (isAuthorized && doctorProfile) {
+      fetchAppointments();
+    }
   }, [isAuthorized, doctorProfile]);
 
   // 2. Database Actions
@@ -146,8 +160,8 @@ export default function DoctorDashboard() {
   const calculateReports = () => {
     // Basic metrics based on live array
     return {
-      total: { count: completedQueue.length, revenue: completedQueue.reduce((sum, a) => sum + a.fee, 0) },
-      pending: { count: pendingQueue.length, revenue: pendingQueue.reduce((sum, a) => sum + a.fee, 0) },
+      total: { count: completedQueue.length, revenue: completedQueue.reduce((sum, a) => sum + (a.fee || 0), 0) },
+      pending: { count: pendingQueue.length, revenue: pendingQueue.reduce((sum, a) => sum + (a.fee || 0), 0) },
     };
   };
   const reports = calculateReports();
@@ -176,13 +190,13 @@ export default function DoctorDashboard() {
                 <tr key={appt.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   <td className="p-4">
                     <div className="font-bold text-foreground">{appt.appointment_time}</div>
-                    <div className="text-xs text-foreground-muted font-medium">{appt.appointment_date}</div>
+                    <div className="text-xs text-foreground-muted font-medium">{new Date(appt.appointment_date).toLocaleDateString()}</div>
                   </td>
                   <td className="p-4">
                     <div className="font-bold text-foreground">{appt.patient_name}</div>
                     <div className="text-xs text-red-400 font-bold bg-red-500/10 w-fit px-2 py-0.5 rounded-md mt-1">{appt.disease || 'General'}</div>
                   </td>
-                  <td className="p-4 text-foreground-muted font-medium text-sm">{appt.type}</td>
+                  <td className="p-4 text-foreground-muted font-medium text-sm">{appt.type || 'Standard'}</td>
                   <td className="p-4 text-right space-x-2">
                     <button onClick={() => handleViewPatient(appt)} className="text-xs font-bold bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white px-3 py-2 rounded-lg transition-colors">
                       View File
@@ -237,7 +251,7 @@ export default function DoctorDashboard() {
                     </div>
 
                     <div className="bg-[#111113] border border-zinc-800 rounded-3xl p-6 space-y-4">
-                      <div><p className="text-xs text-foreground-muted font-bold uppercase mb-1 flex items-center gap-1"><Stethoscope className="w-3 h-3 text-amber-500"/> Appointment Reason</p><p className="font-medium text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">{viewingPatient.disease}</p></div>
+                      <div><p className="text-xs text-foreground-muted font-bold uppercase mb-1 flex items-center gap-1"><Stethoscope className="w-3 h-3 text-amber-500"/> Appointment Reason</p><p className="font-medium text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">{viewingPatient.disease || 'General Checkup'}</p></div>
                       <div><p className="text-xs text-foreground-muted font-bold uppercase mb-1">Allergies</p><p className="font-bold text-foreground">{patientProfile?.allergies || 'None recorded'}</p></div>
                       <div><p className="text-xs text-foreground-muted font-bold uppercase mb-1">Chronic Diseases</p><p className="font-bold text-foreground">{patientProfile?.chronic_diseases || 'None recorded'}</p></div>
                     </div>
@@ -258,10 +272,10 @@ export default function DoctorDashboard() {
                             <div key={idx} className="bg-[#111113] border border-zinc-800 p-3 rounded-2xl flex justify-between items-center group hover:border-blue-500/50 transition-colors">
                               <div>
                                 <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${record.report_type === 'Prescription' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>{record.report_type}</span>
-                                <p className="text-sm font-bold text-foreground mt-1">{record.file_url}</p>
+                                <p className="text-sm font-bold text-foreground mt-1">{record.title || record.file_url}</p>
                                 <p className="text-[10px] text-foreground-muted font-medium">{record.doctor_name} • {new Date(record.created_at).toLocaleDateString()}</p>
                               </div>
-                              <button className="p-2 bg-zinc-800 hover:bg-primary text-white rounded-xl transition-colors"><Download className="w-4 h-4"/></button>
+                              <a href={record.file_url} target="_blank" rel="noopener noreferrer" className="p-2 bg-zinc-800 hover:bg-primary text-white rounded-xl transition-colors"><Download className="w-4 h-4"/></a>
                             </div>
                           ))
                         )}
