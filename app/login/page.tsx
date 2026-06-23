@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Mail, Lock, User as UserIcon, Shield, ArrowLeft, Stethoscope, HeartPulse } from 'lucide-react';
 import Link from 'next/link';
 
-// 1. Rename your original component to LoginContent
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -42,8 +41,8 @@ function LoginContent() {
         });
         if (signUpError) throw signUpError;
         
-        // Mock routing for demonstration 
-        router.push(role === 'doctor' ? '/dashboard/doctor' : (returnTo || '/dashboard/patient'));
+        // Let the central router handle the actual destination
+        router.push('/dashboard');
       } else {
         // 2. Sign In
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
@@ -52,14 +51,8 @@ function LoginContent() {
         });
         if (signInError) throw signInError;
 
-        // Determine routing based on role (mocked logic - in production, check profile table)
-        if (email.includes('doctor')) {
-          router.push('/dashboard/doctor');
-        } else if (email.includes('admin')) {
-          router.push('/dashboard/admin');
-        } else {
-          router.push(returnTo || '/dashboard/patient');
-        }
+        // Push to the central server router so it handles the strict role checks
+        router.push(returnTo || '/dashboard');
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please try again.');
@@ -69,11 +62,11 @@ function LoginContent() {
   };
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { 
-        redirectTo: `${window.location.origin}/auth/callback` 
+      options: {
+        // Pass the role securely through the callback URL
+        redirectTo: `${window.location.origin}/auth/callback?role=${role}`
       }
     });
   };
@@ -205,7 +198,6 @@ function LoginContent() {
   );
 }
 
-// 2. Create the new default export that wraps the content in Suspense
 export default function LoginPage() {
   return (
     <Suspense fallback={

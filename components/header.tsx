@@ -10,6 +10,8 @@ import { useRouter, usePathname } from 'next/navigation';
 export function Header() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -20,14 +22,24 @@ export function Header() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setIsLoggedIn(!!session);
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+        setUserRole(profile?.role || null);
+      }
     };
     checkAuth();
-  }, [supabase.auth]);
+  }, [supabase]);
 
   const handleLogout = async () => {
     // 1. Wipe the Supabase session
     await supabase.auth.signOut();
     setIsLoggedIn(false);
+    setUserRole(null);
     
     // 2. Force the router to the homepage
     router.push('/');
@@ -85,6 +97,16 @@ export function Header() {
           <div className="flex items-center gap-2 md:gap-4">
             {isLoggedIn ? (
               <div className="flex items-center gap-2">
+                
+                {/* Admin Exclusive Button */}
+                {userRole === 'admin' && (
+                  <Link href="/dashboard/admin">
+                    <Button variant="outline" className="border-purple-500 text-purple-500 hover:bg-purple-500/10 hidden sm:flex rounded-full font-bold px-4 hover-wave">
+                      Admin Panel
+                    </Button>
+                  </Link>
+                )}
+
                 <Link href="/dashboard">
                   <Button className="bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-glow transition-all duration-300 font-bold btn-glow rounded-full border-0 px-4 md:px-6 gap-2 hover-wave">
                     <User className="w-4 h-4" />
@@ -146,6 +168,17 @@ export function Header() {
                   }`}
                 >
                   Dashboard
+                </Link>
+              )}
+
+              {/* Admin Panel directly to mobile menu if logged in as admin */}
+              {isLoggedIn && userRole === 'admin' && (
+                <Link 
+                  href="/dashboard/admin" 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className={`text-lg font-bold transition-colors text-purple-500 hover:text-purple-400`}
+                >
+                  Admin Panel
                 </Link>
               )}
 

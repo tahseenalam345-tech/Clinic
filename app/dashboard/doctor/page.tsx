@@ -46,7 +46,8 @@ export default function DoctorDashboard() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
       // STRICT GUARD: If not a doctor, kick out. 
-      if (profile?.role !== 'doctor') {
+      // STRICT GUARD: If not a doctor AND not an admin, kick out. 
+      if (profile?.role !== 'doctor' && profile?.role !== 'admin') {
         window.location.href = '/'; 
         return;
       }

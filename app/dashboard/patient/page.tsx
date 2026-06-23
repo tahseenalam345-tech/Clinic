@@ -32,15 +32,15 @@ export default function PatientDashboard() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
       // Treat missing roles as 'patient' by default to prevent loops
+      // Treat missing roles as 'patient' by default to prevent loops
       const userRole = profile?.role || 'patient';
       
-      if (userRole === 'admin') {
-        window.location.href = '/dashboard/admin';
-        return;
-      } else if (userRole === 'doctor') {
+      // KICK OUT doctors (unless they are an admin!)
+      if (userRole === 'doctor') {
         window.location.href = '/dashboard/doctor';
         return;
       } 
+      // Admins and Patients are allowed to stay here!
       
       // If they are a patient (or defaulted to patient), let them in!
       setPatient(profile);
